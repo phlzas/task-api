@@ -1,0 +1,52 @@
+@host = http://localhost:5241
+
+### Stage 0 — hello server
+GET {{host}}/
+Accept: application/json
+
+### Stage 1 — health check
+GET {{host}}/health
+Accept: application/json
+
+### Stage 2 — list all tasks
+GET {{host}}/tasks
+Accept: application/json
+
+### Stage 2 — get one task (expect 200)
+GET {{host}}/tasks/1
+Accept: application/json
+
+### Stage 2 — unknown id (expect 404 + error JSON)
+GET {{host}}/tasks/99
+Accept: application/json
+
+### Stage 3 — create a task (expect 201)
+POST {{host}}/tasks
+Content-Type: application/json
+
+{
+  "title": "Buy milk"
+}
+
+### Stage 3 — validation: empty body (expect 400)
+POST {{host}}/tasks
+Content-Type: application/json
+
+{}
+
+### Stage 4 — update a task (expect 200)
+PUT {{host}}/tasks/1
+Content-Type: application/json
+
+{
+  "title": "Buy oat milk",
+  "done": true
+}
+
+### Stage 4 — delete a task (expect 204, empty body)
+DELETE {{host}}/tasks/1
+Accept: application/json
+
+### Stage 4 — delete unknown id (expect 404)
+DELETE {{host}}/tasks/99
+Accept: application/json

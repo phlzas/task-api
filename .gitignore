@@ -1,0 +1,31 @@
+## .NET / Visual Studio
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## Rider
+.idea/
+
+## Build output
+[Dd]ebug/
+[Rr]elease/
+publish/
+artifacts/
+
+## Node (if any)
+node_modules/
+
+## Secrets — never commit these
+*.env
+.env
+appsettings.Production.json
+appsettings.Local.json
+
+## OS junk
+Thumbs.db
+.DS_Store
+desktop.ini
