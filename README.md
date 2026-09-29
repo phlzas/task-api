@@ -126,3 +126,24 @@ Tasks are held in a `List<TaskItem>` in memory, seeded with three examples.
 Nothing is written to disk, and every task is lost when the server stops.
 That is deliberate for this week — the exercise is to notice it, and to see
 why a real application needs a database. That is what Week 3 adds.
+
+## AI vs me (Stage 7)
+
+Building the same API again with an AI, then reviewing its output against
+this hand-built version.
+
+- Full prompt: [`ai-version/PROMPT.md`](ai-version/PROMPT.md)
+- Review notes: [`ai-version/DIFF-NOTES.md`](ai-version/DIFF-NOTES.md)
+- The AI's code: `ai-version/generated/` (not part of the submission)
+
+<!-- TODO: replace the three answers below with your real ones. -->
+
+**What did the AI do better?**
+
+**What did it get wrong, or quietly ignore from the prompt?**
+
+**What did my prompt forget to specify, and what did the AI silently decide
+for me?**
+
+**The rematch:**
+
