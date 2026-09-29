@@ -29,3 +29,7 @@ appsettings.Local.json
 Thumbs.db
 .DS_Store
 desktop.ini
+
+## local run logs
+run.log
+run.err
