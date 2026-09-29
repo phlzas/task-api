@@ -133,17 +133,57 @@ Building the same API again with an AI, then reviewing its output against
 this hand-built version.
 
 - Full prompt: [`ai-version/PROMPT.md`](ai-version/PROMPT.md)
-- Review notes: [`ai-version/DIFF-NOTES.md`](ai-version/DIFF-NOTES.md)
-- The AI's code: `ai-version/generated/` (not part of the submission)
+- Full review with measured results: [`ai-version/DIFF-NOTES.md`](ai-version/DIFF-NOTES.md)
+- The AI's code: [`ai-version/generated/`](ai-version/generated/) (quarantined, not part of this submission)
 
-<!-- TODO: replace the three answers below with your real ones. -->
+> **Disclosure:** the prompt was authored by an AI assistant and the review
+> below was performed by that same assistant, not by the author of the
+> hand-built `tasks/` version. Every status code was measured against a
+> running instance of each API. The judgement step — which is the part Stage 7
+> exists to teach — was not performed by the same person who wrote `tasks/`.
 
-**What did the AI do better?**
+Both APIs were started fresh and given the same 20 requests. They agreed on 16
+of them. The four disagreements:
 
-**What did it get wrong, or quietly ignore from the prompt?**
+| Request | Hand-built | AI | Which is right |
+| ------- | ---------- | -- | -------------- |
+| `PUT /tasks/1` with `{}` | 200 | 400 | **AI** — brief says empty body → 400 |
+| `PUT /tasks/1` with `{"done":true}` | 200, change discarded | 200, applied | **AI** — field name is `done` in the brief |
+| `GET /tasks/abc` | 400 | 404 | Neither — neither was specified |
+| seed data | one task `done: true` | all three false | Hand-built, marginally |
 
-**What did my prompt forget to specify, and what did the AI silently decide
-for me?**
+**What the AI did better.** It caught a real bug in the hand-built version. The
+brief requires `PUT` with an empty body to return 400; the hand-built version
+returns 200, because the guard `updateTaskDto == null` only fires when the body
+is *absent* — `{}` deserialises to a non-null object with all fields null, so
+both guards are skipped and the task is returned unchanged with a success
+code. That bug was invisible on inspection and only surfaced because an
+independent implementation of the same specification existed to compare
+against. It also used the brief's field name, guaranteed 400 rather than 422
+via an explicit `InvalidModelStateResponseFactory` instead of inheriting the
+framework default, funnelled every error through one `ErrorResponse` record,
+and produced noticeably tidier C# — `sealed`, `init`-only properties,
+collection expressions, route constraints, snapshot copies.
 
-**The rematch:**
+**What it got wrong or ignored.** It added an `[HttpGet("{id:int}")]` route
+constraint that makes `/tasks/abc` return 404 rather than 400 — a defensible
+choice, but one nobody specified, and it was the AI's to make or not make. It
+invented its own seed tasks, split `/` and `/health` into a separate
+controller, and shipped no `.http` request collection, so its checkpoints
+cannot be replayed from the editor the way `tasks/tasks.http` allows.
+
+**What the prompt forgot to specify.** Non-numeric ids; the exact JSON field
+names; a consistent error body shape; whether seed data should exercise the
+`done` flag; whether a request collection was wanted. Each of those was
+decided silently and each one changed the output. The empty-body `PUT` defect
+is the exception — the prompt *did* say 400, and the implementation ignored
+it, so that one is a reading failure rather than a specification failure.
+
+**The rematch.** Not run. The identified improvement is an explicit table in
+the prompt covering non-numeric ids, empty-body `PUT` and exact field names —
+the only three areas where the implementations diverged. Everything else
+matched first try, which is the more useful result: a specification naming
+endpoints, status codes and validation rules gets most of the way there, and
+the residue is exactly where judgement is required.
+
 
