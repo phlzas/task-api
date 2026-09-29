@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using tasks.Reposetry.IRepos;
 using tasks.Reposetry.Repos;
 
@@ -5,7 +6,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(o => o.JsonSerializerOptions.UnmappedMemberHandling =
+        JsonUnmappedMemberHandling.Disallow);
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

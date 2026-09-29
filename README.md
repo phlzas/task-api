@@ -127,6 +127,54 @@ Nothing is written to disk, and every task is lost when the server stops.
 That is deliberate for this week — the exercise is to notice it, and to see
 why a real application needs a database. That is what Week 3 adds.
 
+### Known deviation from the brief: `isCompleted`, not `done`
+
+The brief's examples use `done` for the completion flag. This API uses
+`isCompleted`, which is a deliberate choice and not an oversight.
+
+A client built from the brief will send:
+
+```json
+{ "title": "Buy milk", "done": true }
+```
+
+and get **400 Bad Request**, with the framework's validation body:
+
+```json
+{
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+  "title": "One or more validation errors occurred.",
+  "status": 400,
+  "errors": {
+    "createTaskDto": ["The createTaskDto field is required."],
+    "$.done": ["The JSON property 'done' could not be mapped to any .NET member contained in type 'tasks.Controllers.CreateTaskDto'."]
+  }
+}
+```
+
+The correct call against this API is:
+
+```json
+{ "title": "Buy milk", "isCompleted": true }
+```
+
+A 400 is the intended response, and JSON is configured to
+[reject unmapped members](https://learn.microsoft.com/dotnet/standard/serialization/system-text-json/unmapped-member-handling)
+so the mistake is reported rather than swallowed. An earlier version accepted
+`done`, returned **201 or 200, and silently discarded it** — the worst outcome
+available, because the client would believe the task had been updated when
+nothing had changed. That defect was caught by the Stage 7 review, not by
+reading the code.
+
+One rough edge worth naming: the `PUT` guard returns this API's own error
+shape, `{"error": "Supply at least one of 'title' or 'isCompleted'"}`, while
+an unknown *field* returns the longer framework body above. The two error
+formats are not unified, and the framework version names internal DTO types.
+The AI's version funnels every error through one `ErrorResponse` record, which
+is the tidier approach; unifying this is left undone rather than hidden.
+
+See [`ai-version/DIFF-NOTES.md`](ai-version/DIFF-NOTES.md).
+
 ## AI vs me (Stage 7)
 
 Building the same API again with an AI, then reviewing its output against
@@ -191,7 +239,8 @@ typed is stored verbatim. It added an `[HttpGet("{id:int}")]` route constraint
 making `/tasks/abc` return 404 rather than 400 — defensible, but specified by
 nobody. It invented its own seed tasks, split `/` and `/health` into a separate
 controller, and shipped no `.http` request collection, so its checkpoints cannot
-be replayed from the editor.
+be replayed from the editor. It also silently drops unrecognised fields, which
+the hand-built version did too until this review fixed both.
 
 **A correction to an earlier claim here.** The AI does *not* guarantee 400
 rather than 422. That holds for a malformed body, and it does return 400 for

@@ -103,7 +103,8 @@ three defects came from here.
 | `POST` array body | 400 | 400 | yes |
 | `POST` string body | 400 | 400 | yes |
 | `POST` with no `Content-Type` | **415** | **415** | yes — **both wrong** |
-| `POST {"id":99,"done":true}` | 201, server assigned both | same | yes |
+| `POST {"title":"Buy milk","done":true}` | **400** | 201, `done` dropped | **no — fixed** |
+| `POST {"id":99,"done":true}` | **400** | 201, both dropped | no — fixed |
 | `POST` title `"  pad  "` | trimmed to `"pad"` | **kept as `"  pad  "`** | **no — mine better** |
 | `GET /tasks/` trailing slash | 200 | 200 | yes |
 | `GET /TASKS` uppercase | 200 | 200 | yes — routing is case-insensitive |
@@ -122,9 +123,9 @@ to make it obvious.
 
 **It followed the field name in the brief.** I wrote `done` in the
 specification and named the property `isCompleted` in my own code. Before the
-fix, a spec-conforming client got **200 having changed nothing** — silent data
-loss behind a success code. After the fix it gets 400, which is at least
-honest. The AI's version uses `done` and applies it.
+fixes, a spec-conforming client got **200 on `PUT` and 201 on `POST`, both
+having silently discarded the field** — data loss behind a success code. It
+now gets 400 on both. The AI's version uses `done` and applies it.
 
 **It documented every response code correctly from the start.** Its
 `swagger.json` already listed `201 400` on create and `200 400 404` on update,
@@ -152,6 +153,13 @@ obeyed a negative instruction, which is rarer than it sounds.
 intact. The brief only requires a non-empty, non-whitespace title, so this is
 not a violation — but storing whitespace a user typed is a small quality gap
 my version does not have.
+
+**It silently drops unrecognised fields.** `POST {"title":"x","done":true}`
+returned 201 with the flag discarded, and a client-supplied `id` was accepted
+and ignored. The hand-built version had the identical defect; neither
+implementation rejected unknown members until this review configured
+`UnmappedMemberHandling.Disallow`. So this is not a point in the AI's favour —
+it is a gap both shared, and both prompts failed to mention.
 
 **It returns 415 for a missing `Content-Type`, not 400.** So does mine. This
 corrects something claimed earlier in this file: the AI does **not** "guarantee"
@@ -185,8 +193,23 @@ Every one of these is a line I did not write, and every one changed the output:
 1. **Non-numeric ids.** Unspecified. The AI chose 404 via a route constraint;
    I return 400.
 2. **The `done` vs `isCompleted` field name.** I specified `done` and
-   implemented `isCompleted`, and nobody reconciled them. Still the one open
-   divergence between the two APIs.
+   implemented `isCompleted`, and nobody reconciled them. This stays
+   unresolved **by choice** — the hand-built version keeps `isCompleted` and
+   documents the deviation, rather than renaming to match. The observable
+   consequence is that a spec-conforming client gets 400 rather than a silent
+   no-op. That is the remaining divergence between the two APIs, and it is
+   documented under "Known deviation" in the main `README.md`.
+
+   Getting to that 400 took a second fix, and it is the more interesting one.
+   Rejecting `done` on `PUT` was free — the no-op guard already caught it,
+   because a body of `{"done":true}` leaves both fields null. On `POST` the
+   same field was accepted and **silently discarded**: `CreateTaskDto` has only
+   `Title`, `System.Text.Json` ignores unmapped members by default, and because
+   `title` was valid the no-op guard never fired. The result was `201 Created`
+   with `isCompleted: false` and a client that believed its flag had been set.
+   Fixed by setting `UnmappedMemberHandling.Disallow` in `AddJsonOptions`, so an
+   unrecognised field is a 400 on every endpoint. It also now rejects a
+   client-supplied `id`, which was previously accepted and ignored.
 3. **What to do with a no-op `PUT`.** I said "invalid body → 400" and then
    wrote code returning 200. The prompt was right and the implementation ignored
    it — a reading failure, not a specification failure.
