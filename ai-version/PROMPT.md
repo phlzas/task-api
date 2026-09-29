@@ -60,9 +60,16 @@ list is the actual output of this exercise.*
 - I never specified what should happen for a **non-numeric** id such as
   `/tasks/abc`. 400 or 404? I had not thought about it at all.
 - I never specified what a **PUT with a completely empty body** should do.
-  My hand-built version returns 200 for it; the brief says empty body → 400.
+  My hand-built version returned 200 for it; the brief says empty body → 400.
+  The Stage 7 review found and fixed that, but the prompt was right and the
+  implementation was not — a reading failure, not a specification gap.
 - I never specified the **JSON field name** for the completion flag. I wrote
   `done` in the brief, then used `isCompleted` in my own code, and never
-  reconciled the two.
+  reconciled the two. This one is still open.
 - I never specified whether error bodies should share a consistent shape.
   I used anonymous objects; the AI used a single `ErrorResponse` record.
+- I never specified which **status codes the Swagger document must list**. I
+  omitted them entirely, so my published docs advertised `200` for a `POST`
+  that returns 201, and showed no 400 or 404 anywhere. The AI listed them all
+  without being asked. This was the worst of the omissions, because the docs
+  then actively misdescribe the API.

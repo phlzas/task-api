@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using tasks.Models;
 using tasks.Reposetry.IRepos;
@@ -27,6 +28,7 @@ public class TasksController : ControllerBase
     /// </summary>
     /// <returns>List of all tasks</returns>
     [HttpGet]
+    [ProducesResponseType(typeof(IEnumerable<TaskItem>), StatusCodes.Status200OK)]
     public IActionResult GetAll()
     {
         return Ok(_repoTaskItem.Items);
@@ -38,6 +40,8 @@ public class TasksController : ControllerBase
     /// <param name="id">The task ID</param>
     /// <returns>The task with the specified ID</returns>
     [HttpGet("{id}")]
+    [ProducesResponseType(typeof(TaskItem), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public IActionResult GetById(int id)
     {
         var task = _repoTaskItem.GetItem(id);
@@ -57,6 +61,8 @@ public class TasksController : ControllerBase
     /// <param name="createTaskDto">The task title</param>
     /// <returns>The newly created task with ID</returns>
     [HttpPost]
+    [ProducesResponseType(typeof(TaskItem), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public IActionResult Create([FromBody] CreateTaskDto createTaskDto)
     {
         // Validation: title is required and cannot be empty
@@ -91,6 +97,9 @@ public class TasksController : ControllerBase
     /// <param name="updateTaskDto">The updated task data</param>
     /// <returns>The updated task</returns>
     [HttpPut("{id}")]
+    [ProducesResponseType(typeof(TaskItem), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public IActionResult Update(int id, [FromBody] UpdateTaskDto updateTaskDto)
     {
         if (updateTaskDto == null)
@@ -99,6 +108,11 @@ public class TasksController : ControllerBase
         var task = _repoTaskItem.GetItem(id);
         if (task == null)
             return NotFound(new { error = $"Task {id} not found" });
+
+        // {} deserialises to a non-null DTO with all fields null, so the null
+        // check above misses it; without this the request would change nothing.
+        if (updateTaskDto.Title == null && !updateTaskDto.IsCompleted.HasValue)
+            return BadRequest(new { error = "Supply at least one of 'title' or 'isCompleted'" });
 
         // Validate title if provided
         if (updateTaskDto.Title != null && string.IsNullOrWhiteSpace(updateTaskDto.Title))
@@ -121,6 +135,8 @@ public class TasksController : ControllerBase
     /// <param name="id">The task ID to delete</param>
     /// <returns>No content on success</returns>
     [HttpDelete("{id}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public IActionResult Delete(int id)
     {
         var removed = _repoTaskItem.RemoveItem(id);

@@ -1,31 +1,72 @@
 # AI vs me — review notes
 
-> **Provenance:** the prompt was authored by the assistant and this review was
-> performed by the assistant, not by the author of the hand-built `tasks/`
+> **Provenance:** the prompt was authored by an AI assistant and this review was
+> performed by that same assistant, not by the author of the hand-built `tasks/`
 > version. Every status code below was measured against a running instance of
-> each API on a fresh server, not read off the source. The judgement step —
-> which is the actual skill Stage 7 teaches — was not done by the same person
-> who built the hand version.
+> each API, not read off the source. The judgement step — which is the actual
+> skill Stage 7 teaches — was not done by the same person who built the hand
+> version.
 
 The hand-built version lives in `tasks/` and runs on port **5241**. The AI's
-version lives in `generated/` and runs on port **5299**. Both were started
-fresh before each round of requests, because an earlier round of testing was
-contaminated by a stale process still holding a port — worth knowing, because
-it produced two confidently wrong readings before it was caught.
+version lives in `generated/` and runs on port **5299**.
+
+Two process notes, because both produced confidently wrong readings before
+they were caught:
+
+- An early round of testing ran against a **stale `dotnet run` orphan** still
+  holding port 5299, already mutated by earlier requests. That made a working
+  `PUT` look like a 404. Every number below comes from an instance confirmed
+  fresh by checking its seed data first.
+- A verification run after a failed build **silently tested the previous
+  binary**, and one test fixture had been written as an empty file instead of
+  `{}`, so an apparent `PUT {}` pass was really a JSON parse error. The build
+  is now gated on a clean exit before any request is sent.
 
 ## Did it start on the first try?
 
 Yes. `dotnet build` returned 0 errors and 0 warnings, and the server came up
-and answered requests without incident. It did not need a retry.
+and answered requests without incident.
 
-One process note: the build-and-run step had to be stopped and finished
-separately, because `dotnet run` does not return. That is a property of the
-command, not a defect in the generated code.
+One process note: `dotnet run` does not return, so build-and-run has to be
+stopped and finished separately. That is a property of the command, not a
+defect in the generated code.
+
+## What the review found in the hand-built version
+
+Three real defects, all now fixed. Two of the three had nothing to do with the
+AI's correctness — the extended battery found them by testing cases the first
+pass never exercised.
+
+### 1. `PUT` with a no-op body returned 200 — fixed
+
+The brief says an invalid body on `PUT` must return 400. Sending `{}` — or
+`{"title":null,"isCompleted":null}` — returned **200** with the task
+unchanged. Cause: `updateTaskDto == null` only fires when the body is
+*absent*, but `{}` deserialises into a **non-null** object whose fields are all
+null, so every guard was skipped.
+
+Fixed with an explicit check. `404` still takes precedence over `400` for an
+unknown id, which is the conventional order and the one the original code
+already implied.
+
+### 2. Swagger documented `POST /tasks` as returning 200 — fixed
+
+It returns **201**. The generated `swagger.json` said `200`, so the published
+documentation contradicted the API.
+
+### 3. Swagger documented no error responses at all — fixed
+
+`GET`, `PUT` and `DELETE` each listed only `200`. No `400`, no `404`, no `204`
+on delete. Anyone reading the docs could not learn that a delete returns 204 or
+that a bad body returns 400.
+
+Both Swagger defects came from the same cause: no `[ProducesResponseType]`
+attributes, which are now on every action.
 
 ## Checkpoint results
 
-Measured, not assumed. The hand version returned 200 to the brief's field
-name `done` while silently discarding it — that cell is the interesting one.
+Measured against a clean build. The three defects above are fixed in this
+table.
 
 | Request | Mine | The AI's | Same? |
 | ------- | ---- | -------- | ----- |
@@ -41,111 +82,147 @@ name `done` while silently discarding it — that cell is the interesting one.
 | `POST /tasks` blank title | 400 | 400 | yes |
 | `POST /tasks` malformed JSON | 400 | 400 | yes |
 | `PUT /tasks/1` blank title | 400 | 400 | yes |
-| `PUT /tasks/1` empty body `{}` | **200** | **400** | **no — mine is wrong** |
-| `PUT /tasks/1` `{"done":true}` | **200, ignored** | **200, applied** | **no — mine is wrong** |
+| `PUT /tasks/1` empty body `{}` | 400 | 400 | yes — **after the fix** |
+| `PUT /tasks/1` explicit nulls | 400 | 400 | yes — **after the fix** |
+| `PUT /tasks/1` `{"done":true}` | **400** | **200, applied** | **no** |
 | `PUT /tasks/1` `{"isCompleted":true}` | 200, applied | 400 | no — schema differs |
 | `PUT /tasks/99` | 404 | 404 | yes |
 | `DELETE /tasks/1` | 204 | 204 | yes |
 | `DELETE /tasks/99` | 404 | 404 | yes |
 | `GET /docs` | 200 | 200 | yes |
 
+## The extended battery
+
+The first pass only covered the endpoints the brief names. A second pass went
+looking for the cases a real client hits and a spec never mentions. Two of the
+three defects came from here.
+
+| Case | Mine | The AI's | Same? |
+| ---- | ---- | -------- | ----- |
+| `POST` title is a number | 400 | 400 | yes |
+| `POST` array body | 400 | 400 | yes |
+| `POST` string body | 400 | 400 | yes |
+| `POST` with no `Content-Type` | **415** | **415** | yes — **both wrong** |
+| `POST {"id":99,"done":true}` | 201, server assigned both | same | yes |
+| `POST` title `"  pad  "` | trimmed to `"pad"` | **kept as `"  pad  "`** | **no — mine better** |
+| `GET /tasks/` trailing slash | 200 | 200 | yes |
+| `GET /TASKS` uppercase | 200 | 200 | yes — routing is case-insensitive |
+| `GET /tasks/2147483647` | 404 | 404 | yes |
+| first id after deleting every task | 1 | 4 | design divergence, not a bug |
+| Swagger `POST /tasks` | 201 400 | 201 400 | yes — **after the fix** |
+| Swagger `GET /tasks/{id}` | 200 404 | 200 404 | yes — **after the fix** |
+| Swagger `PUT /tasks/{id}` | 200 400 404 | 200 400 404 | yes — **after the fix** |
+| Swagger `DELETE /tasks/{id}` | 204 404 | 204 404 | yes — **after the fix** |
+
 ## 1. What did the AI do better?
 
-**It caught a real bug in my version.** The brief says an empty or invalid
-body on `PUT` must return 400. My version returns **200**. The cause is a
-subtle one: `updateTaskDto == null` only fires when the body is *absent*, but
-`{}` deserialises into a non-null object whose fields are all null, so both
-of my guards are skipped and the method returns the task unchanged with
-200. The AI guarded explicitly — *"Supply at least one of 'title' or
-'done'"* — and returns 400. Reading my own code, that bug was invisible. It
-took a working implementation of the same spec to expose it.
+**It exposed the `PUT` no-op bug.** Defect 1 above. Reading the code, that bug
+was invisible; it took an independent implementation of the same specification
+to make it obvious.
 
 **It followed the field name in the brief.** I wrote `done` in the
-specification and then named the property `isCompleted` in my own code. A
-client built to the brief sends `{"done":true}`, my API binds nothing and
-returns 200 having changed nothing — silent data loss behind a success code.
-The AI used `done` exactly as specified.
+specification and named the property `isCompleted` in my own code. Before the
+fix, a spec-conforming client got **200 having changed nothing** — silent data
+loss behind a success code. After the fix it gets 400, which is at least
+honest. The AI's version uses `done` and applies it.
 
-**It guaranteed the 400-not-422 rule rather than inheriting it.** It
-registered an `InvalidModelStateResponseFactory` so a malformed body is
-converted to a 400 with a JSON body. My version returns 400 too, but only
-because that is the framework default — I never made it a decision, so I
-could not have told you why it works.
+**It documented every response code correctly from the start.** Its
+`swagger.json` already listed `201 400` on create and `200 400 404` on update,
+where mine listed `200` and nothing else. That is the difference between a
+documented API and a decorated one, and it took three attributes per action to
+catch up.
 
-**A single error shape.** It uses `record ErrorResponse(string Error)` for
-every failure, so all errors serialise to `{"error":"..."}`. Mine uses
-anonymous objects at four separate call sites. Same output today, but nothing
-guarantees the fourth one will match if someone edits it.
+**A single error shape.** `record ErrorResponse(string Error)` for every
+failure, so all errors serialise to `{"error":"..."}`. Mine uses anonymous
+objects at four separate call sites — same output today, but nothing stops the
+fourth from drifting.
 
-**Cleaner C# throughout.** `sealed` classes, `init`-only properties,
-collection expressions (`[.. _tasks]`), file-scoped namespaces,
-`{id:int}` route constraints, and it returns snapshots from `All()` rather
-than exposing the live list. It also set `GenerateDocumentationFile` with
-`NoWarn 1591`, which fills Swagger with real descriptions.
+**Cleaner C# throughout.** `sealed` classes, `init`-only properties, collection
+expressions, snapshot copies from `All()` rather than handing out the live
+list, and `GenerateDocumentationFile` with `NoWarn 1591` so Swagger fills with
+real descriptions.
 
-**It did not over-build.** Told to keep it simple, it produced a controller,
-a store and three small records — no repository interface, no service layer.
-It obeyed a negative instruction, which is rarer than it sounds.
+**It did not over-build.** Told to keep it simple, it produced a controller, a
+store and three small records — no repository interface, no service layer. It
+obeyed a negative instruction, which is rarer than it sounds.
 
 ## 2. What did it get wrong, or quietly ignore from the prompt?
 
+**It does not trim titles.** `{"title":"  pad  "}` is stored with the padding
+intact. The brief only requires a non-empty, non-whitespace title, so this is
+not a violation — but storing whitespace a user typed is a small quality gap
+my version does not have.
+
+**It returns 415 for a missing `Content-Type`, not 400.** So does mine. This
+corrects something claimed earlier in this file: the AI does **not** "guarantee"
+400 via its `InvalidModelStateResponseFactory`. That holds for a malformed body,
+and it does return 400 for `{}` — but a request with no `Content-Type` never
+reaches the model-state factory and comes back 415 from the framework. Both
+implementations trip over this, so it is not a point in the AI's favour.
+
 **It added a route constraint I never asked for.** `[HttpGet("{id:int}")]`
-means `/tasks/abc` returns **404** where mine returns **400**. Neither is
-wrong, but I never specified it, and the two answers are defensible — a
-non-numeric id *is* a malformed request (400) and *is* an absent resource
-(404). The AI chose silently. This is the cleanest example on this page of
-something an AI decides for you unless you write it down.
+makes `/tasks/abc` return **404** where mine returns **400**. Both defensible,
+neither specified, and its choice to make silently is the cleanest example here
+of something an AI decides for you unless you write it down.
 
-**It invented seed data.** My three tasks are `Finish the Week 2 README` and
-`Review the HTTP status codes` — self-referential, and frankly a bit smug. It
-chose `Walk the dog` and `Write the report`. Mine also seeds one task with
-`done: true`, which demonstrates the flag better; the AI seeds all three
-false, so the Swagger screenshot does not show the boolean doing anything.
+**It invented seed data.** Mine are `Finish the Week 2 README` and `Review the
+HTTP status codes` — self-referential, and frankly a bit smug. It chose `Walk
+the dog` and `Write the report`. Mine also seeds one task with the completion
+flag set, so the boolean does something visible; the AI seeds all three false,
+so its Swagger screenshot never exercises it.
 
-**It split `/` and `/health` into a separate `ApiInfoController` and gave them
-named response types.** Fine, arguably tidier, but it is a structural choice
-I did not make and would not have made.
+**It split `/` and `/health` into a separate `ApiInfoController`** with named
+response types. Tidier, and a structural choice I did not make.
 
 **It has no request collection.** `tasks/tasks.http` gives a one-click request
-per endpoint in the editor. The generated project has nothing equivalent, so
-running its checkpoints means remembering URLs.
-
-**Its id counter is a plain increment.** `_nextId = 4`, then `_nextId++`. Mine
-computes `Max(x => x.Id) + 1` on every create. The AI's is cheaper and cannot
-collide here, because clients cannot choose ids — but it is a hidden
-assumption rather than a derived fact.
+per endpoint. The generated project has nothing equivalent, so replaying its
+checkpoints means remembering URLs.
 
 ## 3. What did my prompt forget to specify?
 
-Every one of these is a line I did not write, and every one changed the
-output:
+Every one of these is a line I did not write, and every one changed the output:
 
-1. **Non-numeric ids.** Unspecified. The AI chose 404 via a route
-   constraint. I would have chosen 400. Both shipped without me deciding.
-2. **Empty-body PUT.** I knew the brief said 400 and still wrote code that
-   returns 200. The prompt was not the failure here — the implementation was.
-   Worth being precise about: this one is on me, not on the AI.
-3. **The `done` vs `isCompleted` field name.** I specified `done` and
-   implemented `isCompleted`. Nobody reconciled them, so the API and its own
-   specification disagree.
+1. **Non-numeric ids.** Unspecified. The AI chose 404 via a route constraint;
+   I return 400.
+2. **The `done` vs `isCompleted` field name.** I specified `done` and
+   implemented `isCompleted`, and nobody reconciled them. Still the one open
+   divergence between the two APIs.
+3. **What to do with a no-op `PUT`.** I said "invalid body → 400" and then
+   wrote code returning 200. The prompt was right and the implementation ignored
+   it — a reading failure, not a specification failure.
 4. **A consistent error body shape.** Unspecified, so the AI chose a record
    and I chose four anonymous objects.
-5. **Whether seed data should exercise `done: true`.** Unspecified.
-6. **Whether a `.http` request collection was wanted.** Unspecified, so I have
-   one and it does not.
-7. **The project name and namespace.** It chose `TaskApi`; mine is `tasks`.
-   Harmless, but it means `git diff --no-index` paths do not line up.
-8. **The `/tasks` route shape** — `[Route("tasks")]` versus my
-   `[Route("/tasks")]`. Identical behaviour, different text, and a diff tool
-   reports it as a change.
+5. **Whether to trim titles.** Unspecified, so the AI keeps padding and I strip
+   it. Neither is wrong.
+6. **Response codes in the OpenAPI document.** Unspecified, and I omitted them
+   entirely — the worst omission, because the docs then actively misdescribe the
+   API.
+7. **Whether seed data should exercise the completion flag.** Unspecified.
+8. **Whether a `.http` request collection was wanted.** Unspecified.
+9. **The project name and namespace.** It chose `TaskApi`; mine is `tasks`, so
+   `git diff --no-index` paths do not line up.
+
+## A correction I owe the record
+
+I initially treated the two id schemes as a bug in the hand-built version — it
+computes `Max(id) + 1`, the AI keeps a monotonic counter, and I assumed the
+hand-built one would eventually collide. Testing it properly showed that is
+wrong: the `Any()` guard only fires when the list is *genuinely empty*, at which
+point no task with that id exists, so there is nothing to collide with. Both
+schemes are valid. The AI's never reuses an id, which some prefer; mine keeps
+ids small. A design divergence, not a defect.
 
 ## The rematch
 
-The prompt was not regenerated for a second attempt, so there is no second
-round to report. The improvement identified from this round is a concrete
-one: add an explicit table to the prompt covering non-numeric ids, empty-body
-PUT, and the exact JSON field names, since those three are the only places
-the two implementations disagree. Everything else already matched on the first
-attempt — which is the more useful lesson, because it means a specification
-that names endpoints, status codes and validation rules gets most of the way
-there, and the residue is exactly where the judgement lives.
+Not run. The improvements identified from this round are concrete: add an
+explicit table to the prompt covering non-numeric ids, the no-op `PUT`, the
+exact JSON field names, and the response codes the OpenAPI document must list.
+Those four are the only places the implementations disagreed, and all four fit
+in a prompt line.
+
+The more useful lesson is the one I got wrong twice. A specification naming
+endpoints, status codes and validation rules gets an implementation most of the
+way there on the first attempt — and the residue is exactly where judgement is
+required. It also will not tell you about itself: three of the four defects I
+found in my own code surfaced only when I tested cases the brief never
+mentions, and two of my early "findings" were measurement errors, not bugs.

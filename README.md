@@ -142,48 +142,81 @@ this hand-built version.
 > running instance of each API. The judgement step — which is the part Stage 7
 > exists to teach — was not performed by the same person who wrote `tasks/`.
 
-Both APIs were started fresh and given the same 20 requests. They agreed on 16
-of them. The four disagreements:
+Both APIs were started fresh and given the same 20 requests, then a second
+round of edge cases the brief never mentions.
 
-| Request | Hand-built | AI | Which is right |
-| ------- | ---------- | -- | -------------- |
-| `PUT /tasks/1` with `{}` | 200 | 400 | **AI** — brief says empty body → 400 |
-| `PUT /tasks/1` with `{"done":true}` | 200, change discarded | 200, applied | **AI** — field name is `done` in the brief |
-| `GET /tasks/abc` | 400 | 404 | Neither — neither was specified |
-| seed data | one task `done: true` | all three false | Hand-built, marginally |
+### Three defects this found in the hand-built version — all fixed
 
-**What the AI did better.** It caught a real bug in the hand-built version. The
-brief requires `PUT` with an empty body to return 400; the hand-built version
-returns 200, because the guard `updateTaskDto == null` only fires when the body
-is *absent* — `{}` deserialises to a non-null object with all fields null, so
-both guards are skipped and the task is returned unchanged with a success
-code. That bug was invisible on inspection and only surfaced because an
-independent implementation of the same specification existed to compare
-against. It also used the brief's field name, guaranteed 400 rather than 422
-via an explicit `InvalidModelStateResponseFactory` instead of inheriting the
-framework default, funnelled every error through one `ErrorResponse` record,
-and produced noticeably tidier C# — `sealed`, `init`-only properties,
-collection expressions, route constraints, snapshot copies.
+1. **`PUT` with `{}` returned 200.** The brief requires 400. The guard
+   `updateTaskDto == null` only fires when the body is *absent* — `{}`
+   deserialises to a non-null object with all fields null, so every guard was
+   skipped and the task came back unchanged with a success code. Invisible on
+   inspection; it took an independent implementation of the same spec to expose
+   it.
+2. **Swagger documented `POST /tasks` as 200.** It returns 201. The published
+   docs contradicted the API.
+3. **Swagger listed no error responses at all.** `GET`, `PUT` and `DELETE` each
+   showed only `200` — no 400, no 404, no 204 on delete. Both Swagger defects
+   came from missing `[ProducesResponseType]` attributes, now on every action.
 
-**What it got wrong or ignored.** It added an `[HttpGet("{id:int}")]` route
-constraint that makes `/tasks/abc` return 404 rather than 400 — a defensible
-choice, but one nobody specified, and it was the AI's to make or not make. It
-invented its own seed tasks, split `/` and `/health` into a separate
-controller, and shipped no `.http` request collection, so its checkpoints
-cannot be replayed from the editor the way `tasks/tasks.http` allows.
+Two of the three had nothing to do with the AI's correctness — they surfaced
+only from the extended battery.
+
+### Checkpoint results after the fixes
+
+| Request | Hand-built | AI | Same? |
+| ------- | ---------- | -- | ----- |
+| `PUT /tasks/1` with `{}` | 400 | 400 | yes — **after the fix** |
+| `PUT /tasks/1` with `{"done":true}` | **400** | **200, applied** | **no — still open** |
+| `PUT /tasks/1` with `{"isCompleted":true}` | 200, applied | 400 | no — schema differs |
+| `GET /tasks/abc` | 400 | 404 | no — neither was specified |
+| `POST` title `"  pad  "` | trimmed to `"pad"` | kept as `"  pad  "` | no — hand-built better |
+| `POST` with no `Content-Type` | **415** | **415** | yes — **both wrong** |
+| seed data | one task completed | all three false | Hand-built, marginally |
+| Swagger response codes | all four operations complete | all four complete | yes — **after the fix** |
+
+**What the AI did better.** It exposed the `PUT` no-op bug. It used the brief's
+field name, so a spec-conforming client works against it; the hand-built
+version silently discarded `{"done":true}`, and now at least returns 400. It
+documented every response code correctly from the start — its `swagger.json`
+already listed `201 400` on create and `200 400 404` on update, where the
+hand-built version listed `200` and nothing else, which is the difference
+between a documented API and a decorated one. It funnelled every error through
+one `ErrorResponse` record instead of four anonymous objects, returned snapshots
+rather than handing out the live list, and produced tidier C# — `sealed`,
+`init`-only, collection expressions.
+
+**What it got wrong or ignored.** It does not trim titles, so whitespace a user
+typed is stored verbatim. It added an `[HttpGet("{id:int}")]` route constraint
+making `/tasks/abc` return 404 rather than 400 — defensible, but specified by
+nobody. It invented its own seed tasks, split `/` and `/health` into a separate
+controller, and shipped no `.http` request collection, so its checkpoints cannot
+be replayed from the editor.
+
+**A correction to an earlier claim here.** The AI does *not* guarantee 400
+rather than 422. That holds for a malformed body, and it does return 400 for
+`{}`, but a request with no `Content-Type` never reaches its model-state
+factory and comes back **415** from the framework. Both implementations trip
+over this, so it is not a point in the AI's favour. Relatedly, the two id
+schemes were initially described here as a bug in the hand-built version. They
+are not: `Max(id) + 1` only falls back to 1 when the list is genuinely empty,
+at which point no such task exists. A design divergence, not a defect.
 
 **What the prompt forgot to specify.** Non-numeric ids; the exact JSON field
-names; a consistent error body shape; whether seed data should exercise the
-`done` flag; whether a request collection was wanted. Each of those was
-decided silently and each one changed the output. The empty-body `PUT` defect
-is the exception — the prompt *did* say 400, and the implementation ignored
-it, so that one is a reading failure rather than a specification failure.
+names; a consistent error body shape; whether to trim titles; which response
+codes the OpenAPI document must list; whether seed data should exercise the
+completion flag; whether a request collection was wanted. Each was decided
+silently and each changed the output. The no-op `PUT` defect is the exception —
+the prompt *did* say 400 and the implementation ignored it, so that is a
+reading failure rather than a specification failure.
 
 **The rematch.** Not run. The identified improvement is an explicit table in
-the prompt covering non-numeric ids, empty-body `PUT` and exact field names —
-the only three areas where the implementations diverged. Everything else
-matched first try, which is the more useful result: a specification naming
+the prompt covering non-numeric ids, the no-op `PUT`, exact field names, and
+the required response codes — the only four areas where the implementations
+diverged, and all four fit in a prompt line. Everything else matched on the
+first attempt, which is the more useful result: a specification naming
 endpoints, status codes and validation rules gets most of the way there, and
 the residue is exactly where judgement is required.
+
 
 
