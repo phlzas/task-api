@@ -11,7 +11,16 @@ builder.Services.AddControllers()
         JsonUnmappedMemberHandling.Disallow);
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(o =>
+{
+    // The csproj's GenerateDocumentationFile emits the XML, but Swashbuckle
+    // ignores it unless pointed at the file here. Both halves are required.
+    var xml = Path.Combine(AppContext.BaseDirectory, "tasks.xml");
+    if (File.Exists(xml))
+    {
+        o.IncludeXmlComments(xml);
+    }
+});
 builder.Services.AddSingleton<IRepoTaskItem, RepoTaskItem>();
 
 var app = builder.Build();

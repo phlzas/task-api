@@ -1,5 +1,9 @@
 ﻿namespace tasks.Models
 {
+    /// <summary>
+    /// A single to-do item. Held in memory for the lifetime of the process,
+    /// so all tasks are lost when the server stops.
+    /// </summary>
     public class TaskItem
     {
         public int Id { get; set; }

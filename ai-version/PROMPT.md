@@ -65,7 +65,10 @@ list is the actual output of this exercise.*
   implementation was not — a reading failure, not a specification gap.
 - I never specified the **JSON field name** for the completion flag. I wrote
   `done` in the brief, then used `isCompleted` in my own code, and never
-  reconciled the two. This one is still open.
+  reconciled the two. I have now decided to keep `isCompleted` and document the
+  deviation, so the gap is closed by choice rather than by accident — but only
+  because the review forced the question. Left to myself I would have shipped
+  the mismatch silently.
 - I never specified whether error bodies should share a consistent shape.
   I used anonymous objects; the AI used a single `ErrorResponse` record.
 - I never specified which **status codes the Swagger document must list**. I

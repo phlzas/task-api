@@ -193,7 +193,7 @@ this hand-built version.
 Both APIs were started fresh and given the same 20 requests, then a second
 round of edge cases the brief never mentions.
 
-### Three defects this found in the hand-built version — all fixed
+### Four defects this found in the hand-built version — all fixed
 
 1. **`PUT` with `{}` returned 200.** The brief requires 400. The guard
    `updateTaskDto == null` only fires when the body is *absent* — `{}`
@@ -206,16 +206,23 @@ round of edge cases the brief never mentions.
 3. **Swagger listed no error responses at all.** `GET`, `PUT` and `DELETE` each
    showed only `200` — no 400, no 404, no 204 on delete. Both Swagger defects
    came from missing `[ProducesResponseType]` attributes, now on every action.
+4. **Swagger published no descriptions for any of the 7 endpoints.** The
+   requirement is that every endpoint is documented, and the source did carry
+   XML doc comments — but they never reached `swagger.json`, because
+   `GenerateDocumentationFile` was off and Swashbuckle was not pointed at the
+   XML. Both halves are now wired, and all 7 operations plus all 3 schemas
+   publish a description.
 
-Two of the three had nothing to do with the AI's correctness — they surfaced
-only from the extended battery.
+Two of the four had nothing to do with the AI's correctness — they surfaced
+only from the extended battery, and #4 surfaced only from auditing
+`swagger.json` field by field rather than reading the Swagger page.
 
 ### Checkpoint results after the fixes
 
 | Request | Hand-built | AI | Same? |
 | ------- | ---------- | -- | ----- |
 | `PUT /tasks/1` with `{}` | 400 | 400 | yes — **after the fix** |
-| `PUT /tasks/1` with `{"done":true}` | **400** | **200, applied** | **no — still open** |
+| `PUT /tasks/1` with `{"done":true}` | **400** | **200, applied** | **no — deliberate deviation** |
 | `PUT /tasks/1` with `{"isCompleted":true}` | 200, applied | 400 | no — schema differs |
 | `GET /tasks/abc` | 400 | 404 | no — neither was specified |
 | `POST` title `"  pad  "` | trimmed to `"pad"` | kept as `"  pad  "` | no — hand-built better |
