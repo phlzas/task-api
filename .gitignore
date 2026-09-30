@@ -33,3 +33,5 @@ desktop.ini
 ## local run logs
 run.log
 run.err
+*.log
+*.err
