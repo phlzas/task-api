@@ -3,17 +3,35 @@
 FlyRank Internship — Backend AI Engineering — W2 · A1
 
 A small REST API for managing a to-do list. Create, read, update and delete
-tasks; the data is now persisted in SQLite, so it survives server restarts.
+tasks; the data is persisted in PostgreSQL running in Docker, so it survives
+restarts and scales with your application.
 
-Built with **ASP.NET Core on .NET 8**, using MVC controllers and Entity Framework Core with SQLite as the database provider.
+Built with **ASP.NET Core on .NET 8**, using MVC controllers and Entity Framework Core with PostgreSQL.
 
 ## Requirements
 
-- [.NET SDK 8.0 or newer](https://dotnet.microsoft.com/download)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop) (includes Docker Compose)
+- Optional: [.NET SDK 8.0](https://dotnet.microsoft.com/download) for local development without Docker
 
 ## Run
 
-One command:
+### With Docker (Recommended)
+
+One command starts everything:
+
+```bash
+docker compose up
+```
+
+This starts:
+- **PostgreSQL 16** container with persistent volume
+- **Task API** container with automatic migrations
+
+The API is available at `http://localhost:5241` and Swagger UI at `http://localhost:5241/docs`.
+
+### Without Docker (Local Development)
+
+Requires PostgreSQL running locally. Create `.env` from `.env.example` and run:
 
 ```bash
 dotnet run --project tasks
@@ -27,59 +45,148 @@ The server starts on `http://localhost:5241`. Swagger UI is at
 > force plain HTTP. The documented commands below assume
 > `http://localhost:5241`.
 
-The SQLite database file (`tasks.db`) is created automatically in the project directory on first run. If the `tasks` table doesn't exist, it is created with three example tasks.
+## Docker & PostgreSQL
 
-## Database
+The entire stack is defined in `docker-compose.yml`:
 
-### Why SQLite?
+```yaml
+version: '3.8'
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: tasks_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-SQLite was chosen because:
-- **Lightweight**: No separate database server required
-- **File-based**: Simple to set up and distribute with the project
-- **Zero-configuration**: Database is automatically created with a single file
-- **Perfect for learning**: Easy to inspect and modify using a GUI tool (DB Browser for SQLite)
+  app:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=tasks_db
+      - DATABASE_USER=postgres
+      - DATABASE_PASSWORD=postgres123
 
-### Database location
-
-The SQLite database file is stored at:
-
+volumes:
+  postgres_data:
+    driver: local
 ```
-C:\Users\<YourUsername>\source\repos\tasks\tasks\tasks.db
+
+### Configuration
+
+Connection details are in `.env` (gitignored; `.env.example` committed):
+
+```env
+DATABASE_HOST=postgres
+DATABASE_PORT=5432
+DATABASE_NAME=tasks_db
+DATABASE_USER=postgres
+DATABASE_PASSWORD=postgres123
+ASPNETCORE_ENVIRONMENT=Development
 ```
 
-It's created automatically when the application first starts and contains a `tasks` table with these columns:
-- `Id` (INTEGER PRIMARY KEY, auto-increment)
-- `Title` (TEXT, required)
+**Never commit `.env`** — it contains passwords. Always commit `.env.example` with safe defaults.
+
+### Proving Persistence
+
+The database persists across app restarts (data saved in Docker volume):
+
+```bash
+# Start the stack
+docker compose up
+
+# In another terminal, create a task
+curl -X POST http://localhost:5241/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Test persistence"}'
+
+# Stop the containers (Ctrl+C)
+
+# Restart everything — your task is still there
+docker compose up
+
+# List tasks — they persist
+curl http://localhost:5241/tasks
+```
+
+The PostgreSQL data is stored in a Docker volume (`postgres_data`) that survives container restarts.
+
+### Database Schema
+
+The `TaskItems` table is auto-created by EF Core migrations with:
+- `Id` (SERIAL PRIMARY KEY, auto-increment)
+- `Title` (VARCHAR, required)
 - `IsCompleted` (BOOLEAN, defaults to false)
+- Indexes on `IsCompleted` and `Title` for query performance
 
-### Example SQL queries
+### Useful Docker Commands
 
-Here are some useful queries you can run in a SQLite viewer like [DB Browser for SQLite](https://sqlitebrowser.org/):
+```bash
+# Start the stack (foreground, see logs)
+docker compose up
 
-**List every task:**
-```sql
-SELECT * FROM tasks;
+# Start in background
+docker compose up -d
+
+# Stop everything (data persists in volumes)
+docker compose down
+
+# View logs
+docker compose logs -f app
+docker compose logs -f postgres
+
+# Enter the PostgreSQL database
+docker compose exec postgres psql -U postgres -d tasks_db
+
+# Clean up (remove volumes — loses data)
+docker compose down -v
+
+# View all volumes
+docker volume ls | grep postgres_data
 ```
 
-**Show only completed tasks:**
+### SQL Examples in PostgreSQL
+
+Once inside `psql` (run `docker compose exec postgres psql -U postgres -d tasks_db`):
+
 ```sql
-SELECT * FROM tasks WHERE IsCompleted = 1;
+-- List all tasks
+SELECT * FROM "TaskItems";
+
+-- Show execution plan for a query
+EXPLAIN ANALYZE SELECT * FROM "TaskItems" WHERE "IsCompleted" = true;
+
+-- Count all tasks
+SELECT COUNT(*) FROM "TaskItems";
+
+-- Update a task
+UPDATE "TaskItems" SET "IsCompleted" = true WHERE "Id" = 1;
+
+-- Delete all completed tasks
+DELETE FROM "TaskItems" WHERE "IsCompleted" = true;
 ```
 
-**Count all tasks:**
-```sql
-SELECT COUNT(*) FROM tasks;
-```
+## Architecture: Storage Abstraction
 
-**Mark every task as completed:**
-```sql
-UPDATE tasks SET IsCompleted = 1;
-```
+The **Repository Pattern** proves its value here:
 
-**Delete all completed tasks:**
-```sql
-DELETE FROM tasks WHERE IsCompleted = 1;
-```
+- **Interface**: `IRepoTaskItem.cs` (unchanged from SQLite version)
+- **Implementation**: `RepoTaskItem.cs` (uses EF Core, swappable between databases)
+- **Service**: `TasksController.cs` (unchanged)
+- **Routes**: All endpoints (unchanged)
+
+**Only the database connection string and provider changed.** No service logic, no controller logic, no endpoint URLs changed. This separation of concerns is why you can swap SQLite → PostgreSQL → MySQL without rewriting the API layer. That's the architecture proving itself.
 
 ## Endpoints
 
@@ -148,29 +255,47 @@ request; in Rider or VS Code, use a REST client extension.
 ## How it is put together
 
 ```
-tasks/
+tasks/                       # Main application directory
   Controllers/
-    HomeController.cs     GET / and GET /health
-    TasksController.cs    GET, POST, PUT, DELETE on /tasks
+    HomeController.cs        # GET / and GET /health
+    TasksController.cs       # CRUD endpoints
   Entitys/
-    AppDbContext.cs       Entity Framework Core DbContext for SQLite
+    AppDbContext.cs          # Entity Framework Core DbContext
     Models/
-      TaskItem.cs         the task entity: Id, Title, IsCompleted
+      TaskItem.cs            # Task entity model
   Reposetry/
     IRepos/
-      IRepoTaskItem.cs    storage interface
+      IRepoTaskItem.cs       # Storage interface (database-agnostic)
     Repos/
-      RepoTaskItem.cs     SQLite-backed repository with EF Core
-  Program.cs             wiring, Swagger, DI, database initialization
-  tasks.http             request collection
-  tasks.db               SQLite database (auto-created)
+      RepoTaskItem.cs        # PostgreSQL implementation (EF Core)
+  Migrations/
+    *_InitialCreate.cs       # Database schema migration
+  Program.cs                 # Configuration, DI, database initialization
+  appsettings.json           # Default settings
+  appsettings.Development.json # Development overrides
+  .env                       # Environment variables (gitignored)
+  .env.example               # Template for .env (committed)
+  tasks.csproj               # Project file with NuGet dependencies
+  tasks.http                 # REST client test requests
+
+Dockerfile                   # Container image definition
+docker-compose.yml           # Multi-container orchestration
+init.sql                     # PostgreSQL initialization script
+
 docs/
-  swagger-ui.png         screenshot for this README
+  swagger-ui.png             # API documentation screenshot
 ```
 
 ## Storage
 
-Tasks are now stored in a SQLite database (`tasks.db`), so they persist across server restarts. On first run, the database and `tasks` table are created automatically, with three example tasks inserted to get you started.
+Tasks are stored in PostgreSQL running in Docker. On startup:
+1. Docker Compose starts PostgreSQL with a persistent volume
+2. EF Core migrations run automatically
+3. Schema is created if missing
+4. Sample data is inserted (only once)
+5. API connects and serves requests
+
+Data persists in the `postgres_data` Docker volume, surviving container restarts.
 
 ### Known deviation from the brief: `isCompleted`, not `done`
 

@@ -3,13 +3,29 @@ using tasks.Entitys;
 using tasks.Reposetry.IRepos;
 using tasks.Reposetry.Repos;
 using Microsoft.EntityFrameworkCore;
+using DotNetEnv;
+
+// Load environment variables from .env file
+if (File.Exists(".env"))
+{
+    Env.Load(".env");
+}
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Build connection string from environment variables
+var host = Environment.GetEnvironmentVariable("DATABASE_HOST") ?? "localhost";
+var port = Environment.GetEnvironmentVariable("DATABASE_PORT") ?? "5432";
+var database = Environment.GetEnvironmentVariable("DATABASE_NAME") ?? "tasks_db";
+var username = Environment.GetEnvironmentVariable("DATABASE_USER") ?? "postgres";
+var password = Environment.GetEnvironmentVariable("DATABASE_PASSWORD") ?? "postgres";
+
+var connectionString = $"Host={host};Port={port};Database={database};Username={username};Password={password};";
 
 // Add services to the container.
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite("Data Source=tasks.db"));
+    options.UseNpgsql(connectionString));
 
 builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.UnmappedMemberHandling =
@@ -34,7 +50,7 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    dbContext.Database.EnsureCreated();
+    dbContext.Database.Migrate();
 
     // Insert sample data if table is empty
     if (!dbContext.TaskItems.Any())
@@ -42,7 +58,7 @@ using (var scope = app.Services.CreateScope())
         dbContext.TaskItems.AddRange(
             new tasks.Models.Models.TaskItem { Title = "Learn C#", IsCompleted = false },
             new tasks.Models.Models.TaskItem { Title = "Build an API", IsCompleted = false },
-            new tasks.Models.Models.TaskItem { Title = "Master SQLite", IsCompleted = false }
+            new tasks.Models.Models.TaskItem { Title = "Master PostgreSQL", IsCompleted = false }
         );
         dbContext.SaveChanges();
     }
