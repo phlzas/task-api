@@ -1,10 +1,15 @@
 using System.Text.Json.Serialization;
+using tasks.Entitys;
 using tasks.Reposetry.IRepos;
 using tasks.Reposetry.Repos;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite("Data Source=tasks.db"));
 
 builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.UnmappedMemberHandling =
@@ -21,9 +26,27 @@ builder.Services.AddSwaggerGen(o =>
         o.IncludeXmlComments(xml);
     }
 });
-builder.Services.AddSingleton<IRepoTaskItem, RepoTaskItem>();
+builder.Services.AddScoped<IRepoTaskItem, RepoTaskItem>();
 
 var app = builder.Build();
+
+// Initialize database
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    dbContext.Database.EnsureCreated();
+
+    // Insert sample data if table is empty
+    if (!dbContext.TaskItems.Any())
+    {
+        dbContext.TaskItems.AddRange(
+            new tasks.Models.Models.TaskItem { Title = "Learn C#", IsCompleted = false },
+            new tasks.Models.Models.TaskItem { Title = "Build an API", IsCompleted = false },
+            new tasks.Models.Models.TaskItem { Title = "Master SQLite", IsCompleted = false }
+        );
+        dbContext.SaveChanges();
+    }
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

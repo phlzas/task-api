@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using tasks.Models;
+using tasks.Models.Models;
 using tasks.Reposetry.IRepos;
 
 namespace tasks.Controllers;
@@ -69,14 +69,8 @@ public class TasksController : ControllerBase
         if (string.IsNullOrWhiteSpace(createTaskDto?.Title))
             return BadRequest(new { error = "Title is required" });
 
-        // Generate next free ID
-        var nextId = _repoTaskItem.Items.Any()
-            ? _repoTaskItem.Items.Max(x => x.Id) + 1
-            : 1;
-
         var newTask = new TaskItem
         {
-            Id = nextId,
             Title = createTaskDto.Title.Trim(),
             IsCompleted = false
         };
@@ -125,6 +119,8 @@ public class TasksController : ControllerBase
         // Update IsCompleted if provided
         if (updateTaskDto.IsCompleted.HasValue)
             task.IsCompleted = updateTaskDto.IsCompleted.Value;
+
+        _repoTaskItem.UpdateItem(task);
 
         return Ok(task);
     }

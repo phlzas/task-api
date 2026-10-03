@@ -3,10 +3,9 @@
 FlyRank Internship — Backend AI Engineering — W2 · A1
 
 A small REST API for managing a to-do list. Create, read, update and delete
-tasks; the data lives in memory, so it disappears when the server stops.
+tasks; the data is now persisted in SQLite, so it survives server restarts.
 
-Built with **ASP.NET Core on .NET 8**, using MVC controllers and an in-memory
-repository registered as a singleton.
+Built with **ASP.NET Core on .NET 8**, using MVC controllers and Entity Framework Core with SQLite as the database provider.
 
 ## Requirements
 
@@ -27,6 +26,60 @@ The server starts on `http://localhost:5241`. Swagger UI is at
 > `https://localhost:7212` base URL, or add `--urls http://localhost:5241` to
 > force plain HTTP. The documented commands below assume
 > `http://localhost:5241`.
+
+The SQLite database file (`tasks.db`) is created automatically in the project directory on first run. If the `tasks` table doesn't exist, it is created with three example tasks.
+
+## Database
+
+### Why SQLite?
+
+SQLite was chosen because:
+- **Lightweight**: No separate database server required
+- **File-based**: Simple to set up and distribute with the project
+- **Zero-configuration**: Database is automatically created with a single file
+- **Perfect for learning**: Easy to inspect and modify using a GUI tool (DB Browser for SQLite)
+
+### Database location
+
+The SQLite database file is stored at:
+
+```
+C:\Users\<YourUsername>\source\repos\tasks\tasks\tasks.db
+```
+
+It's created automatically when the application first starts and contains a `tasks` table with these columns:
+- `Id` (INTEGER PRIMARY KEY, auto-increment)
+- `Title` (TEXT, required)
+- `IsCompleted` (BOOLEAN, defaults to false)
+
+### Example SQL queries
+
+Here are some useful queries you can run in a SQLite viewer like [DB Browser for SQLite](https://sqlitebrowser.org/):
+
+**List every task:**
+```sql
+SELECT * FROM tasks;
+```
+
+**Show only completed tasks:**
+```sql
+SELECT * FROM tasks WHERE IsCompleted = 1;
+```
+
+**Count all tasks:**
+```sql
+SELECT COUNT(*) FROM tasks;
+```
+
+**Mark every task as completed:**
+```sql
+UPDATE tasks SET IsCompleted = 1;
+```
+
+**Delete all completed tasks:**
+```sql
+DELETE FROM tasks WHERE IsCompleted = 1;
+```
 
 ## Endpoints
 
@@ -59,10 +112,10 @@ HTTP/1.1 201 Created
 Content-Type: application/json; charset=utf-8
 Date: Tue, 29 Sep 2026 16:52:09 GMT
 Server: Kestrel
-Location: http://localhost:5241/tasks/4
+Location: http://localhost:5241/tasks/1
 Transfer-Encoding: chunked
 
-{"id":4,"title":"Buy milk","isCompleted":false}
+{"id":1,"title":"Buy milk","isCompleted":false}
 ```
 
 Ask for a task that does not exist:
@@ -99,33 +152,25 @@ tasks/
   Controllers/
     HomeController.cs     GET / and GET /health
     TasksController.cs    GET, POST, PUT, DELETE on /tasks
-  Models/
-    TaskItem.cs           the task entity: Id, Title, IsCompleted
+  Entitys/
+    AppDbContext.cs       Entity Framework Core DbContext for SQLite
+    Models/
+      TaskItem.cs         the task entity: Id, Title, IsCompleted
   Reposetry/
     IRepos/
       IRepoTaskItem.cs    storage interface
     Repos/
-      RepoTaskItem.cs     in-memory list, seeded with 3 tasks
-  Program.cs             wiring, Swagger, DI
+      RepoTaskItem.cs     SQLite-backed repository with EF Core
+  Program.cs             wiring, Swagger, DI, database initialization
   tasks.http             request collection
+  tasks.db               SQLite database (auto-created)
 docs/
   swagger-ui.png         screenshot for this README
 ```
 
-### Why the repository is a singleton
-
-ASP.NET Core builds a **new controller instance for every request**, so a
-plain instance field holding the task list would come back empty on each
-call — POST a task, GET `/tasks`, and it would already be gone. Registering
-`RepoTaskItem` as a singleton in `Program.cs` makes the list survive between
-requests, which is the in-memory stand-in for a database.
-
 ## Storage
 
-Tasks are held in a `List<TaskItem>` in memory, seeded with three examples.
-Nothing is written to disk, and every task is lost when the server stops.
-That is deliberate for this week — the exercise is to notice it, and to see
-why a real application needs a database. That is what Week 3 adds.
+Tasks are now stored in a SQLite database (`tasks.db`), so they persist across server restarts. On first run, the database and `tasks` table are created automatically, with three example tasks inserted to get you started.
 
 ### Known deviation from the brief: `isCompleted`, not `done`
 

@@ -1,4 +1,4 @@
-﻿using tasks.Models;
+﻿using tasks.Models.Models;
 
 namespace tasks.Reposetry.IRepos
 {
@@ -8,5 +8,6 @@ namespace tasks.Reposetry.IRepos
         void AddItem(TaskItem item);
         bool RemoveItem(int id);
         TaskItem? GetItem(int id);
+        void UpdateItem(TaskItem item);
     }
 }
