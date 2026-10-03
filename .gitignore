@@ -25,6 +25,11 @@ node_modules/
 appsettings.Production.json
 appsettings.Local.json
 
+## Database files — auto-generated, never commit
+*.db
+*.db-shm
+*.db-wal
+
 ## OS junk
 Thumbs.db
 .DS_Store
